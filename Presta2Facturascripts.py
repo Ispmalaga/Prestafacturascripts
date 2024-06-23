@@ -1,8 +1,8 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
+import argparse
 import requests
 import json
 import mysql.connector
+import os
 from getpass import getpass
 from datetime import datetime
 import logging
@@ -11,7 +11,50 @@ import logging
 logging.basicConfig(filename='factura_import.log', level=logging.INFO, 
                     format='%(asctime)s:%(levelname)s:%(message)s')
 
-def export_invoices_from_prestashop(db_config, start_date, end_date):
+CONFIG_FILE = 'config.json'
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_config(config):
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=4)
+
+def configure_prestashop():
+    config = load_config()
+    prestashop_config = config.get('prestashop', {})
+
+    prestashop_config['host'] = input(f"Host de la base de datos de PrestaShop [{prestashop_config.get('host', '')}]: ") or prestashop_config.get('host')
+    prestashop_config['user'] = input(f"Usuario de la base de datos de PrestaShop [{prestashop_config.get('user', '')}]: ") or prestashop_config.get('user')
+    prestashop_config['password'] = getpass(f"Contraseña de la base de datos de PrestaShop [{prestashop_config.get('password', '')}]: ") or prestashop_config.get('password')
+    prestashop_config['database'] = input(f"Nombre de la base de datos de PrestaShop [{prestashop_config.get('database', '')}]: ") or prestashop_config.get('database')
+
+    config['prestashop'] = prestashop_config
+    save_config(config)
+    print("Configuración de PrestaShop guardada.")
+
+def configure_facturascripts():
+    config = load_config()
+    facturascripts_config = config.get('facturascripts', {})
+
+    facturascripts_config['api_url'] = input(f"URL de la API de FacturaScripts [{facturascripts_config.get('api_url', '')}]: ") or facturascripts_config.get('api_url')
+    facturascripts_config['api_key'] = getpass(f"Clave API de FacturaScripts [{facturascripts_config.get('api_key', '')}]: ") or facturascripts_config.get('api_key')
+
+    config['facturascripts'] = facturascripts_config
+    save_config(config)
+    print("Configuración de FacturaScripts guardada.")
+
+def view_config():
+    config = load_config()
+    print(json.dumps(config, indent=4))
+
+def export_invoices_from_prestashop(start_date, end_date):
+    config = load_config()
+    db_config = config.get('prestashop', {})
+
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor(dictionary=True)
@@ -93,7 +136,12 @@ def get_or_create_customer(api_url, api_key, invoice):
         logging.error(f"Error de conexión: {e}")
         return None
 
-def import_invoices_to_facturascripts(api_url, api_key):
+def import_invoices_to_facturascripts():
+    config = load_config()
+    facturascripts_config = config.get('facturascripts', {})
+    api_url = facturascripts_config.get('api_url')
+    api_key = facturascripts_config.get('api_key')
+
     try:
         with open('invoices.json', 'r') as f:
             invoices = json.load(f)
@@ -125,101 +173,48 @@ def import_invoices_to_facturascripts(api_url, api_key):
             logging.info(f'La factura {invoice["id_order"]} ya existe y no se importará.')
     return True
 
-def configure_prestashop():
-    db_config = {
-        'host': prestashop_host_entry.get(),
-        'user': prestashop_user_entry.get(),
-        'password': prestashop_password_entry.get(),
-        'database': prestashop_db_entry.get()
-    }
-    return db_config
+def main():
+    parser = argparse.ArgumentParser(description="Importador de Facturas PrestaShop a FacturaScripts")
+    
+    subparsers = parser.add_subparsers(dest='command')
 
-def configure_facturascripts():
-    api_url = facturascripts_url_entry.get()
-    api_key = facturascripts_api_key_entry.get()
-    return api_url, api_key
+    # Subcomando para configurar PrestaShop
+    config_prestashop_parser = subparsers.add_parser('config-prestashop', help='Configurar conexión a PrestaShop')
+    
+    # Subcomando para configurar FacturaScripts
+    config_facturascripts_parser = subparsers.add_parser('config-facturascripts', help='Configurar conexión a FacturaScripts')
+    
+    # Subcomando para ver la configuración
+    view_config_parser = subparsers.add_parser('view-config', help='Ver configuración actual')
 
-def export_invoices():
-    db_config = configure_prestashop()
-    start_date = start_date_entry.get()
-    end_date = end_date_entry.get()
-    if export_invoices_from_prestashop(db_config, start_date, end_date):
-        messagebox.showinfo("Éxito", "Facturas exportadas correctamente desde PrestaShop.")
+    # Subcomando para exportar facturas
+    export_parser = subparsers.add_parser('export', help='Exportar facturas desde PrestaShop')
+    export_parser.add_argument('--start-date', required=True, help='Fecha de inicio (YYYY-MM-DD)')
+    export_parser.add_argument('--end-date', required=True, help='Fecha de fin (YYYY-MM-DD)')
+
+    # Subcomando para importar facturas
+    import_parser = subparsers.add_parser('import', help='Importar facturas a FacturaScripts')
+
+    args = parser.parse_args()
+
+    if args.command == 'config-prestashop':
+        configure_prestashop()
+    elif args.command == 'config-facturascripts':
+        configure_facturascripts()
+    elif args.command == 'view-config':
+        view_config()
+    elif args.command == 'export':
+        if export_invoices_from_prestashop(args.start_date, args.end_date):
+            print("Facturas exportadas correctamente desde PrestaShop.")
+        else:
+            print("Error al exportar facturas desde PrestaShop.")
+    elif args.command == 'import':
+        if import_invoices_to_facturascripts():
+            print("Facturas importadas correctamente a FacturaScripts.")
+        else:
+            print("Error al importar facturas a FacturaScripts.")
     else:
-        messagebox.showerror("Error", "Error al exportar facturas desde PrestaShop.")
+        parser.print_help()
 
-def import_invoices():
-    api_url, api_key = configure_facturascripts()
-    if import_invoices_to_facturascripts(api_url, api_key):
-        messagebox.showinfo("Éxito", "Facturas importadas correctamente a FacturaScripts.")
-    else:
-        messagebox.showerror("Error", "Error al importar facturas a FacturaScripts.")
-
-# Crear la interfaz gráfica con Tkinter
-root = tk.Tk()
-root.title("Importador de Facturas PrestaShop a FacturaScripts")
-
-# Sección de configuración de PrestaShop
-prestashop_frame = ttk.LabelFrame(root, text="Configuración PrestaShop")
-prestashop_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
-
-prestashop_host_label = ttk.Label(prestashop_frame, text="Host:")
-prestashop_host_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
-prestashop_host_entry = ttk.Entry(prestashop_frame)
-prestashop_host_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-
-prestashop_user_label = ttk.Label(prestashop_frame, text="Usuario:")
-prestashop_user_label.grid(row=1, column=0, padx=5, pady=5, sticky="e")
-prestashop_user_entry = ttk.Entry(prestashop_frame)
-prestashop_user_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-
-prestashop_password_label = ttk.Label(prestashop_frame, text="Contraseña:")
-prestashop_password_label.grid(row=2, column=0, padx=5, pady=5, sticky="e")
-prestashop_password_entry = ttk.Entry(prestashop_frame, show="*")
-prestashop_password_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
-
-prestashop_db_label = ttk.Label(prestashop_frame, text="Base de Datos:")
-prestashop_db_label.grid(row=3, column=0, padx=5, pady=5, sticky="e")
-prestashop_db_entry = ttk.Entry(prestashop_frame)
-prestashop_db_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
-
-# Sección de configuración de FacturaScripts
-facturascripts_frame = ttk.LabelFrame(root, text="Configuración FacturaScripts")
-facturascripts_frame.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
-
-facturascripts_url_label = ttk.Label(facturascripts_frame, text="URL API:")
-facturascripts_url_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
-facturascripts_url_entry = ttk.Entry(facturascripts_frame)
-facturascripts_url_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-
-facturascripts_api_key_label = ttk.Label(facturascripts_frame, text="Clave API:")
-facturascripts_api_key_label.grid(row=1, column=0, padx=5, pady=5, sticky="e")
-facturascripts_api_key_entry = ttk.Entry(facturascripts_frame, show="*")
-facturascripts_api_key_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-
-# Sección de rango de fechas
-date_frame = ttk.LabelFrame(root, text="Rango de Fechas")
-date_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
-
-start_date_label = ttk.Label(date_frame, text="Fecha de Inicio (YYYY-MM-DD):")
-start_date_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
-start_date_entry = ttk.Entry(date_frame)
-start_date_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-
-end_date_label = ttk.Label(date_frame, text="Fecha de Fin (YYYY-MM-DD):")
-end_date_label.grid(row=1, column=0, padx=5, pady=5, sticky="e")
-end_date_entry = ttk.Entry(date_frame)
-end_date_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-
-# Botones de acción
-action_frame = ttk.Frame(root)
-action_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
-
-export_button = ttk.Button(action_frame, text="Exportar Facturas", command=export_invoices)
-export_button.grid(row=0, column=0, padx=5, pady=5)
-
-import_button = ttk.Button(action_frame, text="Importar Facturas", command=import_invoices)
-import_button.grid(row=0, column=1, padx=5, pady=5)
-
-# Iniciar el bucle principal de Tkinter
-root.mainloop()
+if __name__ == "__main__":
+    main()
