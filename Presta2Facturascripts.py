@@ -1,4 +1,3 @@
-import argparse
 import requests
 import json
 import mysql.connector
@@ -173,48 +172,40 @@ def import_invoices_to_facturascripts():
             logging.info(f'La factura {invoice["id_order"]} ya existe y no se importará.')
     return True
 
-def main():
-    parser = argparse.ArgumentParser(description="Importador de Facturas PrestaShop a FacturaScripts")
-    
-    subparsers = parser.add_subparsers(dest='command')
+def main_menu():
+    while True:
+        print("\nMenu:")
+        print("1. Configurar conexión a PrestaShop")
+        print("2. Configurar conexión a FacturaScripts")
+        print("3. Ver configuración actual")
+        print("4. Exportar facturas desde PrestaShop")
+        print("5. Importar facturas a FacturaScripts")
+        print("6. Salir")
 
-    # Subcomando para configurar PrestaShop
-    config_prestashop_parser = subparsers.add_parser('config-prestashop', help='Configurar conexión a PrestaShop')
-    
-    # Subcomando para configurar FacturaScripts
-    config_facturascripts_parser = subparsers.add_parser('config-facturascripts', help='Configurar conexión a FacturaScripts')
-    
-    # Subcomando para ver la configuración
-    view_config_parser = subparsers.add_parser('view-config', help='Ver configuración actual')
+        choice = input("Seleccione una opción: ")
 
-    # Subcomando para exportar facturas
-    export_parser = subparsers.add_parser('export', help='Exportar facturas desde PrestaShop')
-    export_parser.add_argument('--start-date', required=True, help='Fecha de inicio (YYYY-MM-DD)')
-    export_parser.add_argument('--end-date', required=True, help='Fecha de fin (YYYY-MM-DD)')
-
-    # Subcomando para importar facturas
-    import_parser = subparsers.add_parser('import', help='Importar facturas a FacturaScripts')
-
-    args = parser.parse_args()
-
-    if args.command == 'config-prestashop':
-        configure_prestashop()
-    elif args.command == 'config-facturascripts':
-        configure_facturascripts()
-    elif args.command == 'view-config':
-        view_config()
-    elif args.command == 'export':
-        if export_invoices_from_prestashop(args.start_date, args.end_date):
-            print("Facturas exportadas correctamente desde PrestaShop.")
+        if choice == '1':
+            configure_prestashop()
+        elif choice == '2':
+            configure_facturascripts()
+        elif choice == '3':
+            view_config()
+        elif choice == '4':
+            start_date = input("Ingrese la fecha de inicio (YYYY-MM-DD): ")
+            end_date = input("Ingrese la fecha de fin (YYYY-MM-DD): ")
+            if export_invoices_from_prestashop(start_date, end_date):
+                print("Facturas exportadas correctamente desde PrestaShop.")
+            else:
+                print("Error al exportar facturas desde PrestaShop.")
+        elif choice == '5':
+            if import_invoices_to_facturascripts():
+                print("Facturas importadas correctamente a FacturaScripts.")
+            else:
+                print("Error al importar facturas a FacturaScripts.")
+        elif choice == '6':
+            break
         else:
-            print("Error al exportar facturas desde PrestaShop.")
-    elif args.command == 'import':
-        if import_invoices_to_facturascripts():
-            print("Facturas importadas correctamente a FacturaScripts.")
-        else:
-            print("Error al importar facturas a FacturaScripts.")
-    else:
-        parser.print_help()
+            print("Opción no válida. Por favor, intente de nuevo.")
 
 if __name__ == "__main__":
-    main()
+    main_menu()
